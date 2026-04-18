@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Masterclass Pro: Connected Speech & Fluency Lab</title>
+    
+    <!-- Frameworks & CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/framer-motion@10.12.16/dist/framer-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        :root {
+            --primary: #4f46e5;
+            --primary-soft: #eef2ff;
+            --accent: #f59e0b;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #f1f5f9;
+            color: #0f172a;
+            line-height: 1.6;
+        }
+
+        .phonetic-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .glass-morphism {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+
+        /* Marcadores de Conexión */
+        .link-cv {
+            background-color: #fef08a; /* yellow-200 */
+            border-bottom: 2px solid #eab308;
+            padding: 0 2px;
+            border-radius: 4px;
+            position: relative;
+        }
+        .link-cv::after {
+            content: '‿';
+            position: absolute;
+            bottom: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #eab308;
+            font-weight: 800;
+        }
+
+        .link-vv {
+            background-color: #dcfce7; /* green-100 */
+            border-bottom: 2px dashed #22c55e;
+            padding: 0 2px;
+            border-radius: 4px;
+        }
+
+        .link-gem {
+            background-color: #fee2e2; /* red-100 */
+            border-bottom: 2px solid #ef4444;
+            padding: 0 2px;
+            border-radius: 4px;
+        }
+
+        .link-elision {
+            text-decoration: line-through;
+            color: #94a3b8;
+            opacity: 0.7;
+        }
+
+        /* Animaciones Personalizadas */
+        @keyframes pulse-indigo {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .animate-subtle {
+            animation: pulse-indigo 3s infinite ease-in-out;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        const { motion, AnimatePresence } = window.Motion;
+
+        // --- FUNCIONES DE UTILIDAD (Text to Speech) ---
+        const speak = (text, rate = 0.9) => {
+            if (!window.speechSynthesis) {
+                console.error("Speech Synthesis no soportado en este navegador.");
+                return;
+            }
+            // Cancelar cualquier audio previo
+            window.speechSynthesis.cancel();
+            
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            utterance.rate = rate; // Un poco más lento para notar las conexiones
+            utterance.pitch = 1;
+            window.speechSynthesis.speak(utterance);
+        };
+
+        // --- CONSTANTES Y BASES DE DATOS ---
+
+        const THEORY_MODULES = [
+            {
+                id: 'catenation',
+                title: 'Catenación (CV)',
+                icon: 'fa-link',
+                color: 'yellow',
+                description: 'Ocurre cuando una palabra termina en sonido consonante y la siguiente empieza por vocal.',
+                formula: 'Consonante + Vocal',
+                examples: [
+                    { original: 'Turn on', phonetic: '/tɜːn.ɒn/', connected: '/tɜː.nɒn/', tip: 'Suena como "Tur-non"' },
+                    { original: 'Big apple', phonetic: '/bɪɡ.ˈæp.l/', connected: '/bɪ.ˈɡæp.l/', tip: 'Suena como "Bi-gapple"' }
+                ]
+            },
+            {
+                id: 'intrusion',
+                title: 'Intrusión (VV)',
+                icon: 'fa-plus-circle',
+                color: 'green',
+                description: 'Al unir dos vocales, insertamos un sonido suave (/w/, /j/ o /r/) para evitar la pausa.',
+                formula: 'Vocal + Vocal',
+                examples: [
+                    { original: 'Go out', phonetic: '/ɡəʊ.aʊt/', connected: '/ɡəʊ.waʊt/', tip: 'Sonido /w/ intruso' },
+                    { original: 'I am', phonetic: '/aɪ.æm/', connected: '/aɪ.jæm/', tip: 'Sonido /j/ intruso' }
+                ]
+            },
+            {
+                id: 'elision',
+                title: 'Elisión',
+                icon: 'fa-eraser',
+                color: 'slate',
+                description: 'La desaparición de un sonido (usualmente /t/ o /d/) cuando está entre otras dos consonantes.',
+                formula: 'Consonante + T/D + Consonante',
+                examples: [
+                    { original: 'Next door', phonetic: '/nekst.dɔː/', connected: '/neks.dɔː/', tip: 'La /t/ desaparece' },
+                    { original: 'Sandwich', phonetic: '/ˈsænd.wɪtʃ/', connected: '/ˈsæn.wɪtʃ/', tip: 'La /d/ casi no suena' }
+                ]
+            },
+            {
+                id: 'gemination',
+                title: 'Geminación',
+                icon: 'fa-clone',
+                color: 'red',
+                description: 'Cuando una palabra termina con el mismo sonido con el que empieza la siguiente.',
+                formula: 'Sonido A + Sonido A',
+                examples: [
+                    { original: 'Social life', phonetic: '/ˈsəʊʃl.laɪf/', connected: '/ˈsəʊʃ.laɪf/', tip: 'Una sola "L" larga' },
+                    { original: 'Bad dog', phonetic: '/bæd.dɒɡ/', connected: '/bæː.dɒɡ/', tip: 'Una sola "D" explosiva' }
+                ]
+            }
+        ];
+
+        const PRACTICE_LAB_TEXTS = [
+            {
+                id: 1,
+                title: "At the Airport",
+                words: [
+                    { val: "I", link: "intrusion", hint: "Sonido /j/" },
+                    { val: "always" },
+                    { val: "arrive", link: "linking", hint: "CV" },
+                    { val: "at" },
+                    { val: "the", link: "intrusion", hint: "Sonido /j/" },
+                    { val: "airport", link: "linking", hint: "CV" },
+                    { val: "early" },
+                    { val: "and" },
+                    { val: "wait", link: "linking", hint: "CV" },
+                    { val: "in" },
+                    { val: "the", link: "intrusion", hint: "Sonido /j/" },
+                    { val: "area", link: "linking", hint: "CV" },
+                    { val: "of" },
+                    { val: "the", link: "intrusion", hint: "Sonido /j/" },
+                    { val: "entrance." }
+                ],
+                notes: "En este texto, 'the entrance' suena como /ði jentrəns/. La 'y' intrusa es vital para la fluidez B2."
+            },
+            {
+                id: 2,
+                title: "Business Meeting",
+                words: [
+                    { val: "Could", link: "elision", hint: "D suave" },
+                    { val: "you" },
+                    { val: "send", link: "gemination", hint: "D+D" },
+                    { val: "Dave", link: "linking", hint: "CV" },
+                    { val: "an" },
+                    { val: "email", link: "linking", hint: "CV" },
+                    { val: "about", link: "linking", hint: "CV" },
+                    { val: "it?" },
+                    { val: "He", link: "intrusion", hint: "Sonido /j/" },
+                    { val: "asked", link: "linking", hint: "CV" },
+                    { val: "us" },
+                    { val: "to", link: "intrusion", hint: "Sonido /w/" },
+                    { val: "organize" },
+                    { val: "a", link: "intrusion", hint: "Sonido /r/" },
+                    { val: "overview." }
+                ],
+                notes: "Nota la geminación en 'send Dave'. No hay pausa entre las dos D, es un solo sonido mantenido."
+            }
+        ];
+
+        const EXAM_RESOURCES = [
+            {
+                id: 1,
+                topic: "The Future of Urban Living",
+                level: "B2 Upper",
+                text: "Cities around the world are undergoing an incredible transformation as technology becomes an integral part of our daily existence. For instance, an architect in London recently designed an eco-friendly apartment complex that uses an advanced system of solar panels and rainwater collection. This sort of innovation isn't just about aesthetics; it is about creating an environment where people can thrive without damaging the planet. Most urban planners agree that we need an urgent shift towards green energy if we want to avoid an environmental disaster in the next century. It is an ambitious goal, but an essential one for our survival. Every individual must make an effort to reduce their carbon footprint, from choosing an electric vehicle to supporting an organic local farm. By working together, we can ensure an optimistic future for the generations to come. The transition won't be easy, but it is an opportunity to rethink how we interact with the space around us."
+            },
+            {
+                id: 2,
+                topic: "Psychology: The Power of Habits",
+                level: "B2 Upper",
+                text: "Understanding how an average person develops a habit is an essential step towards self-improvement. According to an expert in neuroscience, our brains are constantly looking for ways to save an enormous amount of energy. When an action is repeated frequently, it becomes an automatic response that requires very little conscious thought. For example, when you brush your teeth in the morning, you don't have to make an active decision to do it; your brain simply follows an established pattern. This is why it is so difficult to break an old habit, especially if it provides an immediate reward. However, if you want to adopt an active lifestyle, you must start by identifying an obvious trigger. It could be an alarm on your phone or even an object in your room. Once you establish an initial routine, it becomes an easier process over time. Many people give up because they expect an instant change, but real progress is an incremental journey that requires an immense amount of patience and dedication."
+            },
+            {
+                id: 3,
+                topic: "Modern Exploration: Deep Sea",
+                level: "B2 Upper",
+                text: "While space exploration often captures our imagination, an undiscovered world exists right here on Earth, deep within our oceans. Scientists estimate that we have explored less than an infinitesimal percentage of the sea floor. Sending an underwater vehicle to the deepest parts of the Atlantic is an incredible challenge due to the extreme pressure. Yet, every mission reveals an extraordinary variety of life forms that have adapted to live in an absolute darkness. These creatures often have an unusual appearance, with some possessing an internal light source to attract prey. Studying these organisms is an invaluable opportunity to understand how life can survive in an extreme environment. Furthermore, the ocean floor contains an abundance of minerals that could be an essential resource for our future technology. However, we must proceed with an extreme caution to avoid damaging an ecosystem that has remained untouched for millions of years. It is an exciting era for marine biology, and every new discovery is an inspiration for the next generation of explorers."
+            },
+            {
+                id: 4,
+                topic: "Education: The Digital Shift",
+                level: "B2 Upper",
+                text: "The traditional classroom is experiencing an unprecedented change due to the rise of digital learning platforms. Today, an ambitious student can access an infinite amount of knowledge from the comfort of an armchair. Online courses offer an accessible way to learn an obscure language or master an advanced technical skill. This flexibility is an enormous advantage for those who have an unpredictable schedule. Nevertheless, some educators argue that an actual physical presence is an important element of the learning process. They believe that an interaction between a teacher and an apprentice creates an emotional connection that a screen cannot replicate. Moreover, working in an office or a shared space fosters an organic collaboration that is hard to achieve in an isolated environment. Despite these concerns, it is an undeniable fact that technology has made education an inclusive right rather than an exclusive privilege. The challenge now is to find an optimal balance between digital efficiency and human connection in an increasingly connected world."
+            },
+            {
+                id: 5,
+                topic: "Culinary Arts: A Global Fusion",
+                level: "B2 Upper",
+                text: "Cooking is an ancient art that has always evolved through an exchange of ideas and ingredients. In the modern era, an authentic recipe often undergoes an unexpected transformation as it travels across borders. For example, an Italian pasta dish might incorporate an Asian spice to create an entirely new flavor profile. This fusion is an interesting reflection of our globalized society, where an exotic ingredient is now an everyday item in our local supermarket. Many chefs believe that experimenting with an unusual combination is an essential part of being creative in the kitchen. It isn't just about following an instruction manual; it's about having an intuition for how different textures and aromas work together. For an aspiring cook, the best way to learn is by visiting an international food market and tasting an unfamiliar fruit or vegetable. By opening our palates to an unknown experience, we not only improve our cooking skills but also gain an appreciation for an alternative culture. After all, a meal is an opportunity to share an adventure with friends and family."
+            }
+        ];
+
+        // --- COMPONENTES ---
+
+        const Navbar = ({ activeTab, setActiveTab }) => (
+            <nav className="fixed top-0 left-0 w-full glass-morphism z-50 px-6 py-4 shadow-md">
+                <div className="max-w-7xl mx-auto flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-indigo-600 p-2 rounded-xl text-white">
+                            <i className="fa-solid fa-waveform-lines text-xl"></i>
+                        </div>
+                        <span className="font-extrabold text-2xl tracking-tighter text-slate-800">
+                            Fluency<span className="text-indigo-600">Lab</span>
+                        </span>
+                    </div>
+                    <div className="hidden md:flex gap-2">
+                        {[
+                            { id: 'theory', label: 'Teoría', icon: 'fa-book-open' },
+                            { id: 'lab', label: 'Laboratorio', icon: 'fa-flask-vial' },
+                            { id: 'quiz', label: 'Quiz', icon: 'fa-check-double' },
+                            { id: 'exam', label: 'Examen', icon: 'fa-graduation-cap' }
+                        ].map(tab => (
+                            <button 
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`px-5 py-2.5 rounded-full font-bold transition-all flex items-center gap-2 ${
+                                    activeTab === tab.id 
+                                    ? 'bg-indigo-600 text-white shadow-lg' 
+                                    : 'text-slate-500 hover:bg-slate-100'
+                                }`}
+                            >
+                                <i className={`fa-solid ${tab.icon}`}></i>
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="md:hidden">
+                        <i className="fa-solid fa-bars text-2xl text-slate-600"></i>
+                    </div>
+                </div>
+            </nav>
+        );
+
+        const TheoryModule = () => {
+            const [selected, setSelected] = useState(THEORY_MODULES[0]);
+
+            return (
+                <div className="max-w-6xl mx-auto space-y-10 animate-fade-in pb-10">
+                    <header className="text-center max-w-2xl mx-auto space-y-4">
+                        <h2 className="text-5xl font-black text-slate-900 leading-tight">Domina el Habla Conectada</h2>
+                        <p className="text-lg text-slate-500 italic">El secreto para dejar de sonar como un robot y empezar a sonar como un nativo.</p>
+                    </header>
+
+                    <div className="grid md:grid-cols-4 gap-4">
+                        {THEORY_MODULES.map(m => (
+                            <button 
+                                key={m.id}
+                                onClick={() => setSelected(m)}
+                                className={`p-6 rounded-[2rem] border-2 transition-all text-left group ${
+                                    selected.id === m.id 
+                                    ? `border-indigo-600 bg-indigo-50 shadow-xl` 
+                                    : 'border-white bg-white hover:border-indigo-100'
+                                }`}
+                            >
+                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 transition-transform group-hover:scale-110 ${
+                                    selected.id === m.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'
+                                }`}>
+                                    <i className={`fa-solid ${m.icon} text-xl`}></i>
+                                </div>
+                                <h3 className="font-extrabold text-xl text-slate-800">{m.title}</h3>
+                                <p className="text-sm text-slate-400 mt-2 line-clamp-2">{m.description}</p>
+                            </button>
+                        ))}
+                    </div>
+
+                    <motion.div 
+                        key={selected.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-white p-10 md:p-14 rounded-[3.5rem] shadow-2xl border border-slate-100 relative overflow-hidden"
+                    >
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600 opacity-[0.03] rounded-full -mr-32 -mt-32"></div>
+                        
+                        <div className="flex flex-col md:flex-row gap-12 items-start relative z-10">
+                            <div className="md:w-1/2 space-y-6">
+                                <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest bg-${selected.color}-100 text-${selected.color}-700 border border-${selected.color}-200`}>
+                                    Regla de Oro
+                                </span>
+                                <h3 className="text-4xl font-black text-slate-800">{selected.title}</h3>
+                                <p className="text-xl text-slate-600 leading-relaxed">{selected.description}</p>
+                                
+                                <div className="p-6 bg-slate-900 rounded-3xl text-white">
+                                    <p className="text-slate-400 font-bold uppercase text-xs mb-2 tracking-widest">Fórmula Visual</p>
+                                    <p className="text-2xl font-black italic">{selected.formula}</p>
+                                </div>
+                                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                                    <p className="text-amber-800 text-sm italic"><strong>💡 Haz clic en el icono de volumen</strong> para escuchar cómo conectar los sonidos.</p>
+                                </div>
+                            </div>
+
+                            <div className="md:w-1/2 w-full space-y-4">
+                                <h4 className="font-black text-slate-400 uppercase text-sm tracking-tighter">Ejemplos Prácticos</h4>
+                                {selected.examples.map((ex, i) => (
+                                    <div key={i} className="p-6 bg-slate-50 border border-slate-100 rounded-[2rem] hover:bg-white hover:shadow-lg transition-all group">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-2xl font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">{ex.original}</span>
+                                            <button 
+                                                onClick={() => speak(ex.original, 0.8)}
+                                                className="text-slate-300 hover:text-indigo-500 transition-colors bg-white p-3 rounded-full shadow-sm hover:shadow-md"
+                                            >
+                                                <i className="fa-solid fa-volume-high"></i>
+                                            </button>
+                                        </div>
+                                        <div className="flex gap-4 items-center">
+                                            <span className="phonetic-font text-indigo-500 bg-indigo-50 px-3 py-1 rounded-lg text-sm">{ex.phonetic}</span>
+                                            <i className="fa-solid fa-arrow-right text-slate-300 text-xs"></i>
+                                            <span className="phonetic-font text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg text-sm font-bold">{ex.connected}</span>
+                                        </div>
+                                        <p className="mt-3 text-xs text-slate-400 font-medium tracking-tight">💡 {ex.tip}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            );
+        };
+
+        const LabSection = () => {
+            const [selectedId, setSelectedId] = useState(1);
+            const [showConnections, setShowConnections] = useState(true);
+            const currentLab = PRACTICE_LAB_TEXTS.find(l => l.id === selectedId);
+
+            const handleListenFull = () => {
+                const fullText = currentLab.words.map(w => w.val).join(' ');
+                speak(fullText, 0.75);
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto space-y-8 animate-fade-in pb-10">
+                    <header className="flex justify-between items-end">
+                        <div>
+                            <h2 className="text-4xl font-black text-slate-900">Laboratorio de Linking</h2>
+                            <p className="text-slate-500">Analiza cómo fluyen las frases reales.</p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setShowConnections(!showConnections)}
+                                className={`px-6 py-2 rounded-full font-bold border-2 transition-all ${
+                                    showConnections ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-indigo-600 border-indigo-600'
+                                }`}
+                            >
+                                {showConnections ? 'Ocultar Marcas' : 'Ver Marcas'}
+                            </button>
+                        </div>
+                    </header>
+
+                    <div className="flex gap-4 overflow-x-auto pb-2 custom-scrollbar">
+                        {PRACTICE_LAB_TEXTS.map(l => (
+                            <button 
+                                key={l.id} 
+                                onClick={() => setSelectedId(l.id)}
+                                className={`px-5 py-2 rounded-xl font-bold transition-all whitespace-nowrap ${selectedId === l.id ? 'bg-white shadow-md text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                {l.title}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="grid md:grid-cols-3 gap-8">
+                        <div className="md:col-span-2 bg-white p-12 md:p-16 rounded-[4rem] shadow-2xl border border-slate-100 flex flex-col items-center justify-center min-h-[400px]">
+                            <p className="text-3xl md:text-5xl font-black text-slate-800 leading-[1.8] md:leading-[2] text-center max-w-3xl">
+                                {currentLab.words.map((w, idx) => (
+                                    <span 
+                                        key={idx} 
+                                        className={`inline-block mr-3 cursor-pointer transition-all ${
+                                            showConnections && w.link ? (
+                                                w.link === 'linking' ? 'link-cv' : w.link === 'intrusion' ? 'link-vv' : w.link === 'gemination' ? 'link-gem' : 'link-elision'
+                                            ) : ''
+                                        }`}
+                                        title={w.hint || ""}
+                                        onClick={() => speak(w.val)}
+                                    >
+                                        {w.val}
+                                    </span>
+                                ))}
+                            </p>
+                            <div className="mt-10 text-slate-300 text-sm flex gap-6 italic">
+                                <span>* Toca una palabra para escucharla individualmente</span>
+                            </div>
+                        </div>
+                        <div className="bg-slate-900 p-10 rounded-[3rem] text-white flex flex-col justify-between shadow-2xl">
+                            <div>
+                                <h3 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                                    <i className="fa-solid fa-microscope text-indigo-400"></i> Análisis Maestro
+                                </h3>
+                                <div className="space-y-4 text-slate-300 text-lg leading-relaxed">
+                                    <p>{currentLab.notes}</p>
+                                    <div className="pt-6 space-y-3">
+                                        <div className="flex items-center gap-3 text-sm">
+                                            <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
+                                            <span>Linking (C+V)</span>
+                                        </div>
+                                        <div className="flex items-center gap-3 text-sm">
+                                            <div className="w-3 h-3 rounded-full bg-emerald-400"></div>
+                                            <span>Intrusión (V+V)</span>
+                                        </div>
+                                        <div className="flex items-center gap-3 text-sm">
+                                            <div className="w-3 h-3 rounded-full bg-rose-400"></div>
+                                            <span>Geminación (Misma C)</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={handleListenFull}
+                                className="mt-10 w-full py-4 bg-indigo-500 hover:bg-indigo-400 rounded-2xl font-black transition-all border border-indigo-400 flex items-center justify-center gap-3"
+                            >
+                                <i className="fa-solid fa-play"></i> Escuchar Texto Completo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const QuizSection = () => {
+            const [currentStep, setCurrentStep] = useState(0);
+            const [selectedOption, setSelectedOption] = useState(null);
+            const [isEvaluated, setIsEvaluated] = useState(false);
+            const [score, setScore] = useState(0);
+
+            const questions = [
+                {
+                    q: "¿Qué sucede en la frase 'I agree'?",
+                    options: ['No hay conexión', 'Intrusión con sonido /j/', 'Geminación de la "I"', 'Elisión de la "A"'],
+                    correct: 1,
+                    explanation: "Al unir /aɪ/ con /əˈɡriː/, insertamos un sonido /j/ (y) para que fluya: 'I-y-agree'."
+                },
+                {
+                    q: "En 'Best time', ¿por qué pronunciamos solo una 'T'?",
+                    options: ['Por Elisión', 'Por Catenación', 'Por Geminación', 'Por Intrusión'],
+                    correct: 2,
+                    explanation: "Las dos T son idénticas, así que se fusionan en una sola articulación mantenida."
+                },
+                {
+                    q: "Suena como 'Ca-nit'. ¿Qué frase es?",
+                    options: ['Can it', 'Call it', 'Came in', 'Car on'],
+                    correct: 0,
+                    explanation: "La /n/ de 'Can' se une a la vocal de 'it' mediante catenación (Linking CV)."
+                }
+            ];
+
+            const current = questions[currentStep];
+
+            const handleCheck = () => {
+                if (selectedOption === current.correct) setScore(score + 1);
+                setIsEvaluated(true);
+            };
+
+            const next = () => {
+                if (currentStep < questions.length - 1) {
+                    setCurrentStep(currentStep + 1);
+                    setSelectedOption(null);
+                    setIsEvaluated(false);
+                } else {
+                    confetti({ particleCount: 150, spread: 60 });
+                }
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto animate-fade-in pb-10">
+                    <div className="bg-white p-12 md:p-16 rounded-[4rem] shadow-2xl border border-slate-100">
+                        <div className="flex justify-between items-center mb-10">
+                            <span className="text-sm font-black text-indigo-600 uppercase tracking-widest">Reto Auditivo {currentStep + 1} de {questions.length}</span>
+                            <div className="px-4 py-1 bg-slate-100 rounded-full text-xs font-bold text-slate-400">Puntos: {score}</div>
+                        </div>
+
+                        <h3 className="text-3xl font-black text-slate-800 mb-10 leading-snug">{current.q}</h3>
+
+                        <div className="grid gap-4 mb-10">
+                            {current.options.map((opt, i) => (
+                                <button 
+                                    key={i}
+                                    disabled={isEvaluated}
+                                    onClick={() => setSelectedOption(i)}
+                                    className={`p-6 rounded-2xl border-2 font-bold text-left transition-all ${
+                                        isEvaluated 
+                                        ? (i === current.correct ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-sm' : (selectedOption === i ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-50 text-slate-300 opacity-60'))
+                                        : (selectedOption === i ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-100 hover:border-indigo-200 text-slate-600')
+                                    }`}
+                                >
+                                    <div className="flex justify-between items-center">
+                                        <span>{opt}</span>
+                                        {isEvaluated && i === current.correct && <i className="fa-solid fa-circle-check"></i>}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+
+                        {isEvaluated && (
+                            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-10 p-6 bg-indigo-50 rounded-2xl text-indigo-900 text-lg border border-indigo-100">
+                                <div className="flex gap-4">
+                                    <button onClick={() => speak(current.explanation)} className="text-indigo-400 text-xl"><i className="fa-solid fa-volume-high"></i></button>
+                                    <p><strong>💡 Explicación:</strong> {current.explanation}</p>
+                                </div>
+                            </motion.div>
+                        )}
+
+                        <div className="flex justify-end">
+                            {!isEvaluated ? (
+                                <button 
+                                    onClick={handleCheck}
+                                    disabled={selectedOption === null}
+                                    className={`px-10 py-4 rounded-full font-black text-lg transition-all ${selectedOption !== null ? 'bg-indigo-600 text-white shadow-lg hover:-translate-y-1' : 'bg-slate-200 text-slate-400'}`}
+                                >
+                                    Comprobar Respuesta
+                                </button>
+                            ) : (
+                                <button 
+                                    onClick={next}
+                                    className="px-10 py-4 bg-slate-900 text-white rounded-full font-black text-lg hover:bg-black shadow-lg transition-all"
+                                >
+                                    {currentStep === questions.length - 1 ? 'Ver Resultados' : 'Siguiente Pregunta'}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ExamSection = () => {
+            const [selectedId, setSelectedId] = useState(null);
+            const [analysisMode, setAnalysisMode] = useState(false);
+            const currentText = EXAM_RESOURCES.find(t => t.id === selectedId);
+
+            const handleSpeechText = () => {
+                speak(currentText.text, 0.85);
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto space-y-10 animate-fade-in pb-20">
+                    <header className="text-center space-y-4">
+                        <h2 className="text-5xl font-black text-slate-900">Fluency Exam Suite</h2>
+                        <p className="text-xl text-slate-500 max-w-2xl mx-auto">Selecciona un texto para tu evaluación oral.</p>
+                    </header>
+
+                    {!selectedId ? (
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {EXAM_RESOURCES.map(ex => (
+                                <button 
+                                    key={ex.id} 
+                                    onClick={() => setSelectedId(ex.id)}
+                                    className="p-8 bg-white rounded-[2.5rem] border border-slate-200 hover:border-indigo-600 hover:shadow-2xl transition-all text-left group flex flex-col justify-between h-full"
+                                >
+                                    <div>
+                                        <div className="flex justify-between items-start mb-6">
+                                            <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                                                <i className="fa-solid fa-file-invoice"></i>
+                                            </div>
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 group-hover:text-indigo-200 transition-colors">ID: {ex.id}</span>
+                                        </div>
+                                        <h3 className="text-2xl font-black text-slate-800 mb-3 group-hover:text-indigo-600 transition-colors">{ex.topic}</h3>
+                                        <p className="text-sm text-slate-400 line-clamp-3 mb-6 leading-relaxed">{ex.text}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 pt-4 border-t border-slate-50">
+                                        <span className="px-3 py-1 bg-slate-100 rounded-lg text-[10px] font-bold text-slate-500 uppercase">{ex.level}</span>
+                                        <span className="text-[10px] font-bold text-indigo-400 ml-auto flex items-center gap-1 italic">Abrir <i className="fa-solid fa-chevron-right text-[8px]"></i></span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="space-y-6">
+                            <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-3xl border border-slate-100 shadow-sm gap-4">
+                                <button onClick={() => setSelectedId(null)} className="flex items-center gap-2 font-bold text-indigo-600 hover:translate-x-[-4px] transition-transform order-2 md:order-1">
+                                    <i className="fa-solid fa-arrow-left"></i> Volver a la Lista
+                                </button>
+                                <div className="flex flex-wrap items-center gap-4 order-1 md:order-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-black text-slate-400 uppercase">Resaltar Conexiones:</span>
+                                        <button 
+                                            onClick={() => setAnalysisMode(!analysisMode)}
+                                            className={`w-14 h-7 rounded-full transition-all relative ${analysisMode ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                                        >
+                                            <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-all ${analysisMode ? 'left-8' : 'left-1'}`}></div>
+                                        </button>
+                                    </div>
+                                    <button 
+                                        onClick={handleSpeechText}
+                                        className="px-6 py-2 bg-indigo-100 text-indigo-600 rounded-full font-bold text-sm hover:bg-indigo-200 transition-all flex items-center gap-2"
+                                    >
+                                        <i className="fa-solid fa-volume-high"></i> Guía Auditiva
+                                    </button>
+                                </div>
+                            </div>
+
+                            <motion.div 
+                                initial={{ opacity: 0, scale: 0.98 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="bg-white p-12 md:p-24 rounded-[4.5rem] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.1)] border border-slate-100 relative overflow-hidden"
+                            >
+                                <div className="absolute top-12 left-1/2 -translate-x-1/2 opacity-[0.05] pointer-events-none">
+                                    <i className="fa-solid fa-quote-left text-[14rem] text-indigo-600"></i>
+                                </div>
+
+                                <div className="text-center mb-16 relative z-10">
+                                    <span className="text-indigo-600 font-black uppercase tracking-[0.2em] text-xs">Examen de Lectura Fluida</span>
+                                    <h3 className="text-4xl font-black text-slate-800 mt-2">{currentText.topic}</h3>
+                                </div>
+
+                                <div className={`text-2xl md:text-4xl font-extrabold text-slate-800 leading-[1.8] md:leading-[2.2] text-center relative z-10 transition-all`}>
+                                    {currentText.text.split(" ").map((word, i, arr) => {
+                                        const next = arr[i+1];
+                                        let linkType = null;
+                                        
+                                        if (analysisMode && next) {
+                                            const lastChar = word.toLowerCase().replace(/[^a-z]/g, "").slice(-1);
+                                            const firstChar = next.toLowerCase().replace(/[^a-z]/g, "").slice(0, 1);
+                                            const vowels = "aeiou";
+                                            const consonants = "bcdfghjklmnpqrstvwxyz";
+
+                                            if (consonants.includes(lastChar) && vowels.includes(firstChar)) linkType = "cv";
+                                            else if (vowels.includes(lastChar) && vowels.includes(firstChar)) linkType = "vv";
+                                            else if (lastChar === firstChar && lastChar !== "") linkType = "gem";
+                                        }
+
+                                        return (
+                                            <span key={i} className={`inline-block mr-3 md:mr-5 mb-2 transition-all cursor-pointer hover:text-indigo-600 ${linkType === 'cv' ? 'link-cv' : linkType === 'vv' ? 'link-vv' : linkType === 'gem' ? 'link-gem' : ''}`} onClick={() => speak(word)}>
+                                                {word}
+                                            </span>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="mt-24 pt-12 border-t border-slate-100 flex flex-col items-center gap-6 relative z-10">
+                                    <p className="text-xs font-black text-slate-300 uppercase tracking-widest">Controles de Evaluación</p>
+                                    <div className="flex flex-wrap justify-center gap-4">
+                                        <button 
+                                            onClick={() => confetti({ particleCount: 150, spread: 70, origin: { y: 0.8 } })}
+                                            className="px-10 py-4 bg-emerald-500 text-white rounded-2xl font-black shadow-xl hover:bg-emerald-600 active:scale-95 transition-all flex items-center gap-3"
+                                        >
+                                            <i className="fa-solid fa-check-double"></i> Aprobar Lectura
+                                        </button>
+                                        <button className="px-10 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black border border-slate-200 hover:bg-slate-200 active:scale-95 transition-all">
+                                            Reintentar <i className="fa-solid fa-rotate-right ml-2 text-xs"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // --- APLICACIÓN PRINCIPAL ---
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('theory');
+
+            return (
+                <div className="min-h-screen pb-32 pt-24 px-4 custom-scrollbar">
+                    <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+                    
+                    <main className="max-w-7xl mx-auto pt-10">
+                        <AnimatePresence mode="wait">
+                            {activeTab === 'theory' && (
+                                <motion.div key="theory" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                                    <TheoryModule />
+                                </motion.div>
+                            )}
+                            {activeTab === 'lab' && (
+                                <motion.div key="lab" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                                    <LabSection />
+                                </motion.div>
+                            )}
+                            {activeTab === 'quiz' && (
+                                <motion.div key="quiz" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                                    <QuizSection />
+                                </motion.div>
+                            )}
+                            {activeTab === 'exam' && (
+                                <motion.div key="exam" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                                    <ExamSection />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </main>
+
+                    {/* Navegación Móvil */}
+                    <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 glass-morphism px-4 py-2 rounded-full shadow-2xl z-[60] flex gap-2">
+                        {[
+                            { id: 'theory', icon: 'fa-book-open' },
+                            { id: 'lab', icon: 'fa-flask-vial' },
+                            { id: 'quiz', icon: 'fa-check-double' },
+                            { id: 'exam', icon: 'fa-graduation-cap' }
+                        ].map(t => (
+                            <button 
+                                key={t.id} 
+                                onClick={() => setActiveTab(t.id)}
+                                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${activeTab === t.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}
+                            >
+                                <i className={`fa-solid ${t.icon}`}></i>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
